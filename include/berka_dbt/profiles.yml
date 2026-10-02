@@ -1,0 +1,7 @@
+berka_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../warehouse/berka.duckdb
+      threads: 4

@@ -1,0 +1,4 @@
+code,name,direction
+PRIJEM,Credit,CREDIT
+VYDAJ,Debit,DEBIT
+VYBER,Cash Withdrawal,DEBIT

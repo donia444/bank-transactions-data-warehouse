@@ -1,0 +1,7 @@
+code,name
+VKLAD,Cash Deposit
+VYBER,Cash Withdrawal
+VYBER KARTOU,Card Withdrawal
+PREVOD Z UCTU,Collection from Another Bank
+PREVOD NA UCET,Remittance to Another Bank
+N/A,Not specified

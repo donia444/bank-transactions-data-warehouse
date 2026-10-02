@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: stg_account
+    description: "One row per account, typed. Branch district and open date decoded."
+    columns:
+      - name: account_id
+        tests: [unique, not_null]
+      - name: account_open_date
+        description: "Converted from YYMMDD. Must never fail to parse."
+        tests: [not_null]
+
+  - name: stg_district
+    description: "One row per district, A1..A16 renamed and typed. '?' values become NULL."
+    columns:
+      - name: district_id
+        tests: [unique, not_null]
+
+  - name: stg_trans
+    description: "One row per transaction, typed, with missing codes unified to 'N/A'."
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: transaction_date
+        tests: [not_null]
+      - name: amount
+        tests: [not_null]
+      - name: transaction_type_code
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['PRIJEM', 'VYDAJ', 'VYBER']

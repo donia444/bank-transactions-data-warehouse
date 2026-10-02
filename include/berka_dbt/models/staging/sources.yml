@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: berka_raw          
+    schema: raw              
+    description: "Untouched copy of the Berka CSV files. Every column is text."
+
+    tables:
+      - name: trans
+        description: "One row per transaction on an account."
+        columns:
+          - name: trans_id
+            tests: [unique, not_null]   
+
+      - name: account
+        description: "One row per bank account."
+        columns:
+          - name: account_id
+            tests: [unique, not_null]
+
+      - name: district
+        description: "Demographic data per district. Columns A1..A16."
+        columns:
+          - name: A1
+            tests: [unique, not_null]   

@@ -1,0 +1,36 @@
+.git
+.env
+.DS_Store
+airflow_settings.yaml
+__pycache__/
+astro
+.venv
+.astro/standalone/
+.astro/worktrees/
+airflow-webserver.pid
+webserver_config.py
+airflow.cfg
+airflow.db
+.astro/*.local.yml
+.astro/*.local.yaml
+
+**/.astro/dbt_metadata.json
+**/.astro/manifest.slim.json
+bank/
+include/data/
+include/warehouse/
+
+
+# Python virtual environment
+bank/
+
+# Data: source files and the generated database
+include/data/
+include/warehouse/
+
+# dbt generated files
+include/logs/
+include/berka_dbt/target/
+include/berka_dbt/dbt_packages/
+include/berka_dbt/logs/
+include/berka_dbt/.user.yml
