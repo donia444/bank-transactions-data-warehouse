@@ -9,3 +9,12 @@ models:
         tests: [unique, not_null]
       - name: full_date
         tests: [unique, not_null]
+
+
+  - name: dim_district
+    description: "Conformed, SCD Type 0. One row per district."
+    columns:
+      - name: district_key
+        tests: [unique, not_null]
+      - name: district_id
+        tests: [unique, not_null]        
