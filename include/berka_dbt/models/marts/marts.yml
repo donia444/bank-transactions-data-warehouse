@@ -17,4 +17,18 @@ models:
       - name: district_key
         tests: [unique, not_null]
       - name: district_id
-        tests: [unique, not_null]        
+        tests: [unique, not_null]     
+
+  - name: dim_account
+    description: "Conformed, SCD Type 1. One row per account."
+    columns:
+      - name: account_key
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [unique, not_null]
+      - name: statement_frequency_name
+        description: "Label from the seed. 'Unknown' would mean a code missing from the seed."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Monthly', 'Weekly', 'After Transaction']
