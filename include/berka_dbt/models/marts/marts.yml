@@ -32,3 +32,15 @@ models:
           - accepted_values:
               arguments:
                 values: ['Monthly', 'Weekly', 'After Transaction']
+
+  - name: dim_transaction_profile
+    description: "Junk dimension. One row per (type, operation, k_symbol) combination."
+    columns:
+      - name: transaction_profile_key
+        tests: [unique, not_null]
+      - name: direction
+        description: "CREDIT = money in, DEBIT = money out."
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CREDIT', 'DEBIT']                
