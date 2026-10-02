@@ -1,0 +1,11 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: "Conformed, generated calendar. One row per day, 1993-01-01 to 1998-12-31."
+    columns:
+      - name: date_key
+        description: "Surrogate key in YYYYMMDD form, e.g. 19930101."
+        tests: [unique, not_null]
+      - name: full_date
+        tests: [unique, not_null]
