@@ -34,3 +34,4 @@ include/berka_dbt/target/
 include/berka_dbt/dbt_packages/
 include/berka_dbt/logs/
 include/berka_dbt/.user.yml
+logs/
