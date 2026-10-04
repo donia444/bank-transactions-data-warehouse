@@ -1,26 +1,7 @@
-"""
-berka_pipeline
---------------
-Orchestrates the Berka bank data warehouse, end to end:
-
-    ingest_raw -> dbt_deps -> dbt_seed -> dbt_staging -> dbt_marts
-    (CSV->raw)    (packages)   (lookups)   (3 views +     (star schema
-                                            raw tests)     + tests)
-
-Airflow does no transformation itself. It only runs each step in order,
-retries it on failure, stops the pipeline if a step fails, and keeps a
-history and logs of every run.
-
-Paths are the ones INSIDE the Docker container, not on Windows:
-    /usr/local/airflow                 = the project root (Astro's AIRFLOW_HOME)
-    /usr/local/airflow/include         = the include/ folder (mounted from Windows)
-    /usr/local/airflow/dbt_venv        = the dbt virtualenv built by the Dockerfile
-"""
 
 from datetime import datetime, timedelta
 
-# Airflow 3 moved these imports; the fallbacks keep the DAG working on
-# Airflow 2 as well, whichever runtime version Astro installed.
+# Airflow 3 moved these imports; the fallbacks keep the DAG working on Airflow 2.
 try:
     from airflow.sdk import DAG
 except ImportError:
@@ -36,87 +17,103 @@ except ImportError:
 # Paths inside the container
 # ---------------------------------------------------------------------------
 AIRFLOW_HOME = "/usr/local/airflow"
-
-# The dbt venv from the Dockerfile. It also contains DuckDB (installed by
-# dbt-duckdb), so its Python can run ingest.py too: no extra packages needed
-# in Airflow's own environment.
-DBT_VENV_BIN = f"{AIRFLOW_HOME}/dbt_venv/bin"
-
+DBT_VENV_BIN = f"{AIRFLOW_HOME}/dbt_venv/bin"          # dbt, python and duckdb
 DBT_PROJECT_DIR = f"{AIRFLOW_HOME}/include/berka_dbt"
 INGEST_SCRIPT = f"{AIRFLOW_HOME}/include/ingestion_raw/ingest.py"
 
+# Every dbt command runs from the dbt project folder (dbt_project.yml, profiles.yml)
+DBT = f"cd {DBT_PROJECT_DIR} && {DBT_VENV_BIN}/dbt"
 
-# ---------------------------------------------------------------------------
-# Settings applied to every task
-# ---------------------------------------------------------------------------
+
 default_args = {
     "owner": "donia",
-    # If a task fails, try again twice, waiting 2 minutes each time.
-    # Helps with temporary problems (e.g. a network blip during dbt deps).
-    "retries": 2,
-    "retry_delay": timedelta(minutes=2),
+    "retries": 2,                          # retry twice on failure...
+    "retry_delay": timedelta(minutes=2),   # ...two minutes apart
 }
 
 
 with DAG(
     dag_id="berka_pipeline",
-    description="Load Berka CSVs into DuckDB and build the star schema with dbt",
+    description="Build and test the Berka warehouse, layer by layer",
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
-    schedule="@daily",      # run once a day, at midnight UTC
-    catchup=False,          # don't "catch up" on every missed day since start_date
-    tags=["berka", "dbt", "duckdb"],
+    schedule="@daily",
+    catchup=False,
+    tags=["berka", "dbt", "duckdb", "data-quality"],
 ) as dag:
 
-    # ---------------------------------------------------------------- RAW
-    # 1. Extract + Load: the 8 CSV files -> raw schema in DuckDB.
-    #    ingest.py exits with code 1 if a row count is wrong; Airflow sees
-    #    the non-zero exit code, marks the task as failed and stops here.
-    ingest_raw = BashOperator(
-        task_id="ingest_raw",
+    # --------------------------------------------------------------- SETUP
+    # dbt_utils (dbt_packages/ is not in Git, so it is installed every run)
+    install_dbt_packages = BashOperator(
+        task_id="install_dbt_packages",
+        bash_command=f"{DBT} deps",
+    )
+
+    # ----------------------------------------------------------------- RAW
+    # 8 CSV files -> raw schema (all text, untouched). The script prints the
+    # row count of every file and exits with code 1 if one differs from
+    # the dataset documentation.
+    load_raw_data = BashOperator(
+        task_id="load_raw_data",
         bash_command=f"{DBT_VENV_BIN}/python {INGEST_SCRIPT}",
     )
 
-    # 2. Install dbt packages (dbt_utils) listed in packages.yml.
-    #    dbt_packages/ is not in Git, so a fresh environment must download
-    #    it before any model that calls dbt_utils can compile.
-    #    "cd" first: dbt looks for dbt_project.yml and profiles.yml in the
-    #    current folder.
-    dbt_deps = BashOperator(
-        task_id="dbt_deps",
-        bash_command=f"cd {DBT_PROJECT_DIR} && {DBT_VENV_BIN}/dbt deps",
+    # Tests on the raw business keys (unique, not_null).
+    # cautious: only tests whose parents are ALL raw sources, so the
+    # fact-vs-source reconciliation test waits for the warehouse layer.
+    test_raw_data = BashOperator(
+        task_id="test_raw_data",
+        bash_command=f'{DBT} test --select "source:*" --indirect-selection=cautious',
     )
 
     # ----------------------------------------------------------- REFERENCE
-    # 3. Load the 4 code -> label lookup tables (seeds/*.csv).
-    dbt_seed = BashOperator(
-        task_id="dbt_seed",
-        bash_command=f"cd {DBT_PROJECT_DIR} && {DBT_VENV_BIN}/dbt seed",
+    # Code -> label lookup tables used by the warehouse dimensions
+    load_reference_seeds = BashOperator(
+        task_id="load_reference_seeds",
+        bash_command=f"{DBT} seed",
     )
 
-    # ------------------------------------------------------------ STAGING
-    # 4. Build the 3 staging views and run their tests.
-    #    --select staging = everything in models/staging/, which also
-    #    includes the source tests in _sources.yml (unique / not_null on
-    #    the raw business keys), so raw data is validated here too.
-    dbt_staging = BashOperator(
-        task_id="dbt_staging",
-        bash_command=f"cd {DBT_PROJECT_DIR} && {DBT_VENV_BIN}/dbt build --select staging",
+    # ------------------------------------------------------------- STAGING
+    # The 3 staging views (models only, tests run in the next task)
+    build_staging = BashOperator(
+        task_id="build_staging",
+        bash_command=f"{DBT} run --select staging",
     )
 
-    # -------------------------------------------------------- WAREHOUSE
-    # 5. Build the star schema (4 dimensions + fact) and run their tests,
-    #    including the row-count check against raw.trans.
-    dbt_marts = BashOperator(
-        task_id="dbt_marts",
-        bash_command=f"cd {DBT_PROJECT_DIR} && {DBT_VENV_BIN}/dbt build --select marts",
+    # Tests on the staging models only (source tests already ran above,
+    # so sources are excluded here)
+    test_staging = BashOperator(
+        task_id="test_staging",
+        bash_command=(
+            f'{DBT} test --select staging --exclude "source:*" '
+            "--indirect-selection=cautious"
+        ),
     )
 
-    # The order: each step starts only after the previous one SUCCEEDED.
+    # ----------------------------------------------------------- WAREHOUSE
+    # The star schema: 4 dimensions + fact_transaction (models only)
+    build_warehouse = BashOperator(
+        task_id="build_warehouse",
+        bash_command=f"{DBT} run --select marts",
+    )
+
+    # Tests on the star schema, including relationships and the
+    # fact-vs-source row-count reconciliation
+    test_warehouse = BashOperator(
+        task_id="test_warehouse",
+        bash_command=f"{DBT} test --select marts",
+    )
+
+    # --------------------------------------------------------------- ORDER
+    # Each task starts only after the previous one SUCCEEDED.
+    # Tasks run one after another: DuckDB allows one writer at a time.
     (
-        ingest_raw
-        >> dbt_deps
-        >> dbt_seed
-        >> dbt_staging
-        >> dbt_marts
+        install_dbt_packages
+        >> load_raw_data
+        >> test_raw_data
+        >> load_reference_seeds
+        >> build_staging
+        >> test_staging
+        >> build_warehouse
+        >> test_warehouse
     )
